@@ -31,24 +31,42 @@ pub mod crc32 {
 
     /// Compute CRC32 using the best available method.
     ///
-    /// This will use hardware acceleration (SSE4.2) on supported x86_64 CPUs,
-    /// or fall back to an optimized software implementation.
+    /// This will use hardware acceleration on supported CPUs:
+    /// - x86_64: SSE4.2 CRC32 instructions
+    /// - aarch64: ARM CRC32 instructions
+    /// Falls back to an optimized software implementation on unsupported platforms.
     #[inline]
     pub fn compute(data: &[u8]) -> u32 {
         #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
         {
-            compute_hardware(data)
+            return compute_hardware_x86(data);
         }
 
-        #[cfg(not(all(target_arch = "x86_64", target_feature = "sse4.2")))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "crc"))]
         {
-            // Try runtime detection on x86_64
+            return compute_hardware_arm(data);
+        }
+
+        #[cfg(not(any(
+            all(target_arch = "x86_64", target_feature = "sse4.2"),
+            all(target_arch = "aarch64", target_feature = "crc")
+        )))]
+        {
+            // Try runtime detection
             #[cfg(target_arch = "x86_64")]
             {
                 if is_x86_feature_detected!("sse4.2") {
                     return unsafe { compute_sse42(data) };
                 }
             }
+
+            #[cfg(target_arch = "aarch64")]
+            {
+                if std::arch::is_aarch64_feature_detected!("crc") {
+                    return unsafe { compute_arm_crc32(data) };
+                }
+            }
+
             compute_software(data)
         }
     }
@@ -107,24 +125,58 @@ pub mod crc32 {
         (crc as u32) ^ 0xFFFFFFFF
     }
 
-    /// Hardware CRC32 with compile-time feature detection.
+    /// Hardware CRC32 with compile-time feature detection (x86_64).
     #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
     #[inline]
-    fn compute_hardware(data: &[u8]) -> u32 {
+    fn compute_hardware_x86(data: &[u8]) -> u32 {
         unsafe { compute_sse42(data) }
+    }
+
+    /// Hardware-accelerated CRC32 using ARM CRC32 instructions.
+    #[cfg(target_arch = "aarch64")]
+    #[target_feature(enable = "crc")]
+    unsafe fn compute_arm_crc32(data: &[u8]) -> u32 {
+        use std::arch::aarch64::{__crc32b, __crc32d};
+
+        let mut crc: u32 = 0xFFFFFFFF;
+
+        // Process 8 bytes at a time using 64-bit CRC instruction
+        let chunks = data.chunks_exact(8);
+        let remainder = chunks.remainder();
+
+        for chunk in chunks {
+            let value = u64::from_le_bytes([
+                chunk[0], chunk[1], chunk[2], chunk[3],
+                chunk[4], chunk[5], chunk[6], chunk[7],
+            ]);
+            crc = __crc32d(crc, value);
+        }
+
+        // Process remaining bytes one at a time
+        for &byte in remainder {
+            crc = __crc32b(crc, byte);
+        }
+
+        crc ^ 0xFFFFFFFF
+    }
+
+    /// Hardware CRC32 with compile-time feature detection (aarch64).
+    #[cfg(all(target_arch = "aarch64", target_feature = "crc"))]
+    #[inline]
+    fn compute_hardware_arm(data: &[u8]) -> u32 {
+        unsafe { compute_arm_crc32(data) }
     }
 
     /// Check if hardware CRC32 is available.
     pub fn is_hardware_accelerated() -> bool {
         #[cfg(target_arch = "x86_64")]
         {
-            is_x86_feature_detected!("sse4.2")
+            return is_x86_feature_detected!("sse4.2");
         }
 
         #[cfg(target_arch = "aarch64")]
         {
-            // ARM CRC instructions - would need separate implementation
-            false
+            return std::arch::is_aarch64_feature_detected!("crc");
         }
 
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
@@ -199,6 +251,9 @@ pub fn acceleration_report() -> String {
     #[cfg(target_arch = "aarch64")]
     {
         features.push("ARM64 NEON");
+        if std::arch::is_aarch64_feature_detected!("crc") {
+            features.push("ARM CRC32");
+        }
     }
 
     if features.is_empty() {

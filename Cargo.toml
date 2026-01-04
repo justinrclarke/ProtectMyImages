@@ -2,10 +2,14 @@
 name = "pmi"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 description = "Protect My Images - Strip metadata from images to protect your privacy"
 license = "Apache-2.0"
 keywords = ["image", "metadata", "exif", "privacy", "cli"]
 categories = ["command-line-utilities", "multimedia::images"]
+repository = "https://github.com/justinrclarke/pmi"
+homepage = "https://github.com/justinrclarke/pmi"
+readme = "README.md"
 
 [dependencies]
 
@@ -16,3 +20,10 @@ path = "src/main.rs"
 [lib]
 name = "pmi"
 path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
