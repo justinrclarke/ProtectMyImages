@@ -34,6 +34,8 @@ pub struct Config {
     pub help: bool,
     /// Show version.
     pub version: bool,
+    /// Number of parallel jobs (threads) for processing.
+    pub jobs: Option<usize>,
 }
 
 impl Default for Config {
@@ -49,6 +51,7 @@ impl Default for Config {
             dry_run: false,
             help: false,
             version: false,
+            jobs: None,
         }
     }
 }
@@ -133,6 +136,12 @@ impl Config {
                 })?;
                 self.output_dir = Some(PathBuf::from(value.as_ref()));
             }
+            "jobs" => {
+                let value = args.next().ok_or_else(|| Error::MissingArgument {
+                    argument: String::from("--jobs <N>"),
+                })?;
+                self.jobs = Some(parse_jobs(value.as_ref())?);
+            }
             _ => {
                 return Err(Error::InvalidArgument {
                     argument: format!("--{}", opt),
@@ -147,6 +156,9 @@ impl Config {
         match key {
             "output-dir" => {
                 self.output_dir = Some(PathBuf::from(value));
+            }
+            "jobs" => {
+                self.jobs = Some(parse_jobs(value)?);
             }
             _ => {
                 return Err(Error::InvalidArgument {
@@ -189,6 +201,18 @@ impl Config {
                 })?;
                 self.output_dir = Some(PathBuf::from(value.as_ref()));
             }
+            'j' => {
+                if !is_last {
+                    return Err(Error::InvalidArgument {
+                        argument: String::from("-j"),
+                        reason: String::from("-j must be the last option in a combined flag"),
+                    });
+                }
+                let value = args.next().ok_or_else(|| Error::MissingArgument {
+                    argument: String::from("-j <N>"),
+                })?;
+                self.jobs = Some(parse_jobs(value.as_ref())?);
+            }
             _ => {
                 return Err(Error::InvalidArgument {
                     argument: format!("-{}", c),
@@ -198,6 +222,23 @@ impl Config {
         }
         Ok(())
     }
+}
+
+/// Parse a jobs value (positive integer).
+fn parse_jobs(value: &str) -> Result<usize> {
+    value.parse::<usize>().map_err(|_| Error::InvalidArgument {
+        argument: String::from("--jobs"),
+        reason: format!("'{}' is not a valid number", value),
+    }).and_then(|n| {
+        if n == 0 {
+            Err(Error::InvalidArgument {
+                argument: String::from("--jobs"),
+                reason: String::from("Number of jobs must be at least 1"),
+            })
+        } else {
+            Ok(n)
+        }
+    })
 }
 
 /// Generate the help message.
@@ -218,6 +259,7 @@ OPTIONS:
     -r, --recursive           Process directories recursively
     -f, --force               Overwrite existing output files
     -i, --in-place            Modify files in place (default: create *_clean suffix)
+    -j, --jobs <N>            Number of parallel threads (default: auto-detect CPU cores)
     -v, --verbose             Show detailed processing information
     -q, --quiet               Suppress all output except errors
     -n, --dry-run             Show what would be done without making changes
@@ -229,6 +271,7 @@ EXAMPLES:
     {} -i photo.jpg                   Overwrite photo.jpg in place
     {} -o ./clean/ *.jpg              Output to ./clean/ directory
     {} -r ./photos/                   Process directory recursively
+    {} -j 4 -r ./photos/              Process with 4 threads
     {} -n -v ./photos/                Dry run with verbose output
 
 SUPPORTED FORMATS:
@@ -238,7 +281,7 @@ SUPPORTED FORMATS:
     WebP (.webp)
     TIFF (.tif, .tiff)
 "#,
-        NAME, VERSION, NAME, NAME, NAME, NAME, NAME, NAME
+        NAME, VERSION, NAME, NAME, NAME, NAME, NAME, NAME, NAME
     )
 }
 
@@ -400,5 +443,49 @@ mod tests {
     fn test_version_message() {
         let version = version_message();
         assert!(version.contains("pmi"));
+    }
+
+    #[test]
+    fn test_parse_jobs_short() {
+        let config = Config::parse(["pmi", "-j", "4", "file.jpg"]).unwrap();
+        assert_eq!(config.jobs, Some(4));
+    }
+
+    #[test]
+    fn test_parse_jobs_long() {
+        let config = Config::parse(["pmi", "--jobs", "8", "file.jpg"]).unwrap();
+        assert_eq!(config.jobs, Some(8));
+    }
+
+    #[test]
+    fn test_parse_jobs_equals() {
+        let config = Config::parse(["pmi", "--jobs=12", "file.jpg"]).unwrap();
+        assert_eq!(config.jobs, Some(12));
+    }
+
+    #[test]
+    fn test_parse_jobs_invalid() {
+        let result = Config::parse(["pmi", "-j", "abc", "file.jpg"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_jobs_zero() {
+        let result = Config::parse(["pmi", "-j", "0", "file.jpg"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_jobs_missing_value() {
+        let result = Config::parse(["pmi", "-j"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_jobs_combined_flags() {
+        let config = Config::parse(["pmi", "-rvj", "4", "dir/"]).unwrap();
+        assert!(config.recursive);
+        assert!(config.verbose);
+        assert_eq!(config.jobs, Some(4));
     }
 }

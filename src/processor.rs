@@ -1,10 +1,12 @@
 //! File processing pipeline.
 //!
 //! This module handles file discovery, format detection, and processing.
+//! Supports parallel processing for improved performance on multi-core systems.
 
 use crate::cli::Config;
 use crate::error::{Error, Result};
 use crate::formats::{detect_format_from_extension, strip_metadata};
+use crate::parallel::{self, ThreadPool};
 use crate::terminal::{
     format_size, print_error, print_info, print_success, print_warning,
     ProcessingStats, ProgressBar, Styled, stdout_supports_color,
@@ -12,6 +14,8 @@ use crate::terminal::{
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Result of processing a single file.
@@ -31,11 +35,14 @@ pub enum ProcessResult {
     /// Processing failed.
     Failed {
         path: PathBuf,
-        error: Error,
+        error: String,
     },
 }
 
-/// File processor.
+// Make ProcessResult Send + Sync for parallel processing
+unsafe impl Send for ProcessResult {}
+
+/// File processor with parallel execution support.
 pub struct Processor {
     config: Config,
     stats: ProcessingStats,
@@ -64,8 +71,24 @@ impl Processor {
             return Ok(self.stats.clone());
         }
 
+        let file_count = files.len();
+        let num_jobs = self.config.jobs.unwrap_or_else(parallel::available_parallelism);
+
         if !self.config.quiet {
-            print_info(&format!("Found {} image file(s) to process", files.len()));
+            let parallel_info = if num_jobs > 1 {
+                format!(" (using {} threads)", num_jobs)
+            } else {
+                String::new()
+            };
+            print_info(&format!(
+                "Found {} image file(s) to process{}",
+                file_count, parallel_info
+            ));
+
+            // Show hardware acceleration info in verbose mode
+            if self.config.verbose {
+                print_info(&crate::simd::acceleration_report());
+            }
         }
 
         // Create output directory if needed.
@@ -82,10 +105,21 @@ impl Processor {
             }
         }
 
-        // Create progress bar.
+        // Process files (parallel or sequential based on configuration)
+        if num_jobs > 1 && file_count > 1 {
+            self.run_parallel(files, num_jobs)?;
+        } else {
+            self.run_sequential(files)?;
+        }
+
+        self.stats.set_duration(self.start_time.elapsed());
+        Ok(self.stats.clone())
+    }
+
+    /// Run processing sequentially.
+    fn run_sequential(&mut self, files: Vec<PathBuf>) -> Result<()> {
         let mut progress = ProgressBar::new(files.len());
 
-        // Process each file.
         for path in &files {
             progress.set_current_file(path.display().to_string());
 
@@ -101,8 +135,58 @@ impl Processor {
             progress.finish();
         }
 
-        self.stats.set_duration(self.start_time.elapsed());
-        Ok(self.stats.clone())
+        Ok(())
+    }
+
+    /// Run processing in parallel using a thread pool.
+    fn run_parallel(&mut self, files: Vec<PathBuf>, num_threads: usize) -> Result<()> {
+        let file_count = files.len();
+        let mut progress = ProgressBar::new(file_count);
+
+        // Channel for receiving results from workers
+        let (result_tx, result_rx) = mpsc::channel::<ProcessResult>();
+
+        // Create shared configuration for workers
+        let config = Arc::new(self.config.clone());
+
+        // Create thread pool
+        let pool = ThreadPool::new(num_threads);
+
+        // Submit all jobs
+        for path in files {
+            let result_tx = result_tx.clone();
+            let config = Arc::clone(&config);
+
+            pool.execute(move || {
+                let result = process_file_standalone(&path, &config);
+                let _ = result_tx.send(result);
+            });
+        }
+
+        // Drop our sender so the channel closes when all workers are done
+        drop(result_tx);
+
+        // Collect results as they complete
+        let mut completed = 0;
+        while let Ok(result) = result_rx.recv() {
+            // Update progress bar
+            if let ProcessResult::Success { ref input, .. } = result {
+                progress.set_current_file(input.display().to_string());
+            }
+
+            self.handle_result(result);
+            completed += 1;
+
+            if !self.config.quiet {
+                progress.set(completed);
+            }
+        }
+
+        if !self.config.quiet {
+            progress.finish();
+        }
+
+        Ok(())
     }
 
     /// Collect all files to process from the configuration paths.
@@ -151,73 +235,18 @@ impl Processor {
         detect_format_from_extension(path).is_some()
     }
 
-    /// Process a single file.
+    /// Process a single file (instance method for sequential processing).
     fn process_file(&self, path: &Path) -> ProcessResult {
-        // Read the file.
-        let data = match fs::read(path) {
-            Ok(d) => d,
-            Err(e) => {
-                return ProcessResult::Failed {
-                    path: path.to_path_buf(),
-                    error: Error::io_with_path(e, path),
-                };
-            }
-        };
-
-        // Strip metadata.
-        let strip_result = match strip_metadata(&data, path) {
-            Ok(r) => r,
-            Err(e) => {
-                return ProcessResult::Failed {
-                    path: path.to_path_buf(),
-                    error: e,
-                };
-            }
-        };
-
-        // Determine output path.
-        let output_path = self.get_output_path(path);
-
-        // Check if output exists.
-        if output_path.exists() && !self.config.force && !self.config.in_place {
-            return ProcessResult::Failed {
-                path: path.to_path_buf(),
-                error: Error::OutputExists {
-                    path: output_path,
-                },
-            };
-        }
-
-        // Write output (or simulate for dry run).
-        if self.config.dry_run {
-            ProcessResult::Success {
-                input: path.to_path_buf(),
-                output: output_path,
-                bytes_removed: strip_result.bytes_removed,
-            }
-        } else {
-            match self.write_output(&output_path, &strip_result.data) {
-                Ok(()) => ProcessResult::Success {
-                    input: path.to_path_buf(),
-                    output: output_path,
-                    bytes_removed: strip_result.bytes_removed,
-                },
-                Err(e) => ProcessResult::Failed {
-                    path: path.to_path_buf(),
-                    error: e,
-                },
-            }
-        }
+        process_file_standalone(path, &self.config)
     }
 
     /// Get the output path for a file.
-    fn get_output_path(&self, input: &Path) -> PathBuf {
-        if self.config.in_place {
+    pub fn get_output_path(config: &Config, input: &Path) -> PathBuf {
+        if config.in_place {
             return input.to_path_buf();
         }
 
-        if let Some(ref output_dir) = self.config.output_dir {
-            // Output to specified directory.
+        if let Some(ref output_dir) = config.output_dir {
             let file_name = input.file_name().unwrap_or_default();
             return output_dir.join(file_name);
         }
@@ -234,33 +263,6 @@ impl Processor {
         } else {
             input.with_file_name(format!("{}_clean.{}", stem, ext))
         }
-    }
-
-    /// Write output to a file atomically.
-    fn write_output(&self, path: &Path, data: &[u8]) -> Result<()> {
-        // For in-place writes, use atomic write via temp file.
-        if self.config.in_place {
-            let temp_path = path.with_extension("pmi_tmp");
-
-            // Write to temp file.
-            let mut file = fs::File::create(&temp_path)
-                .map_err(|e| Error::io_with_path(e, &temp_path))?;
-            file.write_all(data)
-                .map_err(|e| Error::io_with_path(e, &temp_path))?;
-            file.flush()
-                .map_err(|e| Error::io_with_path(e, &temp_path))?;
-
-            // Rename temp file to target.
-            fs::rename(&temp_path, path).map_err(|e| Error::io_with_path(e, path))?;
-        } else {
-            // Direct write for non-in-place.
-            let mut file =
-                fs::File::create(path).map_err(|e| Error::io_with_path(e, path))?;
-            file.write_all(data)
-                .map_err(|e| Error::io_with_path(e, path))?;
-        }
-
-        Ok(())
     }
 
     /// Handle a processing result.
@@ -322,10 +324,93 @@ impl Processor {
     }
 }
 
+/// Process a single file (standalone function for parallel execution).
+fn process_file_standalone(path: &Path, config: &Config) -> ProcessResult {
+    // Read the file.
+    let data = match fs::read(path) {
+        Ok(d) => d,
+        Err(e) => {
+            return ProcessResult::Failed {
+                path: path.to_path_buf(),
+                error: Error::io_with_path(e, path).to_string(),
+            };
+        }
+    };
+
+    // Strip metadata.
+    let strip_result = match strip_metadata(&data, path) {
+        Ok(r) => r,
+        Err(e) => {
+            return ProcessResult::Failed {
+                path: path.to_path_buf(),
+                error: e.to_string(),
+            };
+        }
+    };
+
+    // Determine output path.
+    let output_path = Processor::get_output_path(config, path);
+
+    // Check if output exists.
+    if output_path.exists() && !config.force && !config.in_place {
+        return ProcessResult::Failed {
+            path: path.to_path_buf(),
+            error: format!(
+                "Output file '{}' already exists (use --force to overwrite)",
+                output_path.display()
+            ),
+        };
+    }
+
+    // Write output (or simulate for dry run).
+    if config.dry_run {
+        ProcessResult::Success {
+            input: path.to_path_buf(),
+            output: output_path,
+            bytes_removed: strip_result.bytes_removed,
+        }
+    } else {
+        match write_output_standalone(&output_path, &strip_result.data, config.in_place) {
+            Ok(()) => ProcessResult::Success {
+                input: path.to_path_buf(),
+                output: output_path,
+                bytes_removed: strip_result.bytes_removed,
+            },
+            Err(e) => ProcessResult::Failed {
+                path: path.to_path_buf(),
+                error: e,
+            },
+        }
+    }
+}
+
+/// Write output to a file atomically (standalone function for parallel execution).
+fn write_output_standalone(path: &Path, data: &[u8], in_place: bool) -> std::result::Result<(), String> {
+    if in_place {
+        let temp_path = path.with_extension("pmi_tmp");
+
+        let mut file = fs::File::create(&temp_path)
+            .map_err(|e| format!("Failed to create temp file: {}", e))?;
+        file.write_all(data)
+            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+        file.flush()
+            .map_err(|e| format!("Failed to flush temp file: {}", e))?;
+
+        fs::rename(&temp_path, path)
+            .map_err(|e| format!("Failed to rename temp file: {}", e))?;
+    } else {
+        let mut file = fs::File::create(path)
+            .map_err(|e| format!("Failed to create output file: {}", e))?;
+        file.write_all(data)
+            .map_err(|e| format!("Failed to write output file: {}", e))?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     fn create_test_config(paths: Vec<PathBuf>) -> Config {
         Config {
@@ -335,20 +420,20 @@ mod tests {
             force: false,
             in_place: false,
             verbose: false,
-            quiet: true, // Quiet for tests.
+            quiet: true,
             dry_run: false,
             help: false,
             version: false,
+            jobs: Some(1), // Sequential for tests.
         }
     }
 
     #[test]
     fn test_get_output_path_default() {
         let config = create_test_config(vec![]);
-        let processor = Processor::new(config);
 
         let input = PathBuf::from("/path/to/image.jpg");
-        let output = processor.get_output_path(&input);
+        let output = Processor::get_output_path(&config, &input);
         assert_eq!(output, PathBuf::from("/path/to/image_clean.jpg"));
     }
 
@@ -356,10 +441,9 @@ mod tests {
     fn test_get_output_path_in_place() {
         let mut config = create_test_config(vec![]);
         config.in_place = true;
-        let processor = Processor::new(config);
 
         let input = PathBuf::from("/path/to/image.jpg");
-        let output = processor.get_output_path(&input);
+        let output = Processor::get_output_path(&config, &input);
         assert_eq!(output, input);
     }
 
@@ -367,10 +451,9 @@ mod tests {
     fn test_get_output_path_output_dir() {
         let mut config = create_test_config(vec![]);
         config.output_dir = Some(PathBuf::from("/output"));
-        let processor = Processor::new(config);
 
         let input = PathBuf::from("/path/to/image.jpg");
-        let output = processor.get_output_path(&input);
+        let output = Processor::get_output_path(&config, &input);
         assert_eq!(output, PathBuf::from("/output/image.jpg"));
     }
 

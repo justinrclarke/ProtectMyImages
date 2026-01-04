@@ -42,22 +42,9 @@ fn is_metadata_chunk(chunk_type: &[u8; 4]) -> bool {
 }
 
 /// Calculate CRC32 for PNG chunk validation/creation.
-/// Uses the polynomial 0xEDB88320 (reflected form of 0x04C11DB7).
+/// Uses hardware-accelerated implementation when available.
 fn crc32(data: &[u8]) -> u32 {
-    let mut crc: u32 = 0xFFFFFFFF;
-
-    for &byte in data {
-        crc ^= byte as u32;
-        for _ in 0..8 {
-            if crc & 1 != 0 {
-                crc = (crc >> 1) ^ 0xEDB88320;
-            } else {
-                crc >>= 1;
-            }
-        }
-    }
-
-    crc ^ 0xFFFFFFFF
+    crate::simd::crc32::compute(data)
 }
 
 /// A PNG chunk.

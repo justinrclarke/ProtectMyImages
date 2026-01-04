@@ -226,6 +226,7 @@ fn test_processor_dry_run() {
         dry_run: true,
         help: false,
         version: false,
+        jobs: Some(1),
     };
 
     let mut processor = Processor::new(config);
@@ -268,6 +269,7 @@ fn test_processor_creates_clean_file() {
         dry_run: false,
         help: false,
         version: false,
+        jobs: Some(1),
     };
 
     let mut processor = Processor::new(config);
