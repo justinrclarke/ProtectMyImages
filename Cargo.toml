@@ -1,0 +1,18 @@
+[package]
+name = "pmi"
+version = "0.1.0"
+edition = "2024"
+description = "Protect My Images - Strip metadata from images to protect your privacy"
+license = "MIT"
+keywords = ["image", "metadata", "exif", "privacy", "cli"]
+categories = ["command-line-utilities", "multimedia::images"]
+
+[dependencies]
+
+[[bin]]
+name = "pmi"
+path = "src/main.rs"
+
+[lib]
+name = "pmi"
+path = "src/lib.rs"
