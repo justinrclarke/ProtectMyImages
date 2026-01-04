@@ -28,20 +28,32 @@ PMI removes all this metadata while preserving your image quality.
 
 ## Installation
 
+### Quick Install (Recommended)
+
+**Mac/Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/justinrclarke/pmi/master/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/justinrclarke/pmi/master/install.ps1 | iex
+```
+
 ### From Source
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/justinrclarke/pmi.git
 cd pmi
 cargo build --release
 ```
 
 The binary will be at `./target/release/pmi`.
 
-### Install to PATH
+### Install via Cargo
 
 ```bash
-cargo install --path .
+cargo install --git https://github.com/justinrclarke/pmi.git
 ```
 
 ## Usage
@@ -234,6 +246,7 @@ PMI uses SIMD instructions when available for improved performance:
 |-------------|---------|-------|
 | x86_64 | SSE4.2 | Hardware CRC32 for PNG chunk validation |
 | x86_64 | AVX2/AVX-512 | Auto-vectorized memory operations |
+| ARM64 | CRC32 | Hardware CRC32 for PNG chunk validation |
 | ARM64 | NEON | Auto-vectorized memory operations |
 
 Use `-v` (verbose) mode to see which hardware acceleration features are available on your system.
