@@ -3,7 +3,7 @@ name = "pmi"
 version = "0.1.0"
 edition = "2024"
 description = "Protect My Images - Strip metadata from images to protect your privacy"
-license = "MIT"
+license = "Apache-2.0"
 keywords = ["image", "metadata", "exif", "privacy", "cli"]
 categories = ["command-line-utilities", "multimedia::images"]
 
