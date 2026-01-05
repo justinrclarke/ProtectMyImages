@@ -2,7 +2,7 @@
 //!
 //! Provides progress indication for batch operations.
 
-use super::colors::{format_size, stdout_supports_color, Styled, Symbols};
+use super::colors::{Styled, Symbols, format_size, stdout_supports_color};
 use std::io::{self, IsTerminal, Write};
 use std::time::{Duration, Instant};
 
@@ -28,7 +28,7 @@ impl Default for ProgressConfig {
             width: 20,
             enabled: io::stdout().is_terminal(),
             filled_char: '\u{2588}', // Full block
-            empty_char: '\u{2591}', // Light shade
+            empty_char: '\u{2591}',  // Light shade
         }
     }
 }
@@ -114,9 +114,8 @@ impl ProgressBar {
         let filled = ((percent / 100.0) * self.config.width as f64) as usize;
         let empty = self.config.width.saturating_sub(filled);
 
-        let bar: String = std::iter::repeat(self.config.filled_char)
-            .take(filled)
-            .chain(std::iter::repeat(self.config.empty_char).take(empty))
+        let bar: String = std::iter::repeat_n(self.config.filled_char, filled)
+            .chain(std::iter::repeat_n(self.config.empty_char, empty))
             .collect();
 
         let file_display = if self.current_file.len() > 30 {
@@ -135,8 +134,10 @@ impl ProgressBar {
 
         // Clear any remaining characters from previous line.
         print!("                    ");
-        print!("\r[{}] {}/{} files ({:.0}%) - {}",
-            bar_styled, self.current, self.config.total, percent, file_display);
+        print!(
+            "\r[{}] {}/{} files ({:.0}%) - {}",
+            bar_styled, self.current, self.config.total, percent, file_display
+        );
 
         let _ = io::stdout().flush();
     }
@@ -226,14 +227,11 @@ pub fn print_summary(stats: &ProcessingStats, quiet: bool) {
     let width = 40;
     let inner_width = width - 2;
 
-    let horizontal_line: String = std::iter::repeat(horizontal).take(inner_width).collect();
+    let horizontal_line: String = std::iter::repeat_n(horizontal, inner_width).collect();
 
     // Build the box.
     println!();
-    println!(
-        "{}{}{}",
-        top_left, horizontal_line, top_right
-    );
+    println!("{}{}{}", top_left, horizontal_line, top_right);
 
     // Title.
     let title = "Processing Complete";
@@ -249,10 +247,7 @@ pub fn print_summary(stats: &ProcessingStats, quiet: bool) {
         rest = inner_width - padding - title.len()
     );
 
-    println!(
-        "{}{}{}",
-        t_right, horizontal_line, t_left
-    );
+    println!("{}{}{}", t_right, horizontal_line, t_left);
 
     // Stats.
     let processed_str = format!(
@@ -269,11 +264,7 @@ pub fn print_summary(stats: &ProcessingStats, quiet: bool) {
     );
 
     if stats.failed > 0 {
-        let failed_str = format!(
-            "  {} Failed:      {} files",
-            symbols.error(),
-            stats.failed
-        );
+        let failed_str = format!("  {} Failed:      {} files", symbols.error(), stats.failed);
         println!(
             "{}{:<width$}{}",
             vertical,
@@ -324,10 +315,7 @@ pub fn print_summary(stats: &ProcessingStats, quiet: bool) {
         width = inner_width
     );
 
-    println!(
-        "{}{}{}",
-        bottom_left, horizontal_line, bottom_right
-    );
+    println!("{}{}{}", bottom_left, horizontal_line, bottom_right);
 }
 
 /// Spinner for indeterminate progress.
@@ -342,7 +330,10 @@ impl Spinner {
     /// Create a new spinner with a message.
     pub fn new(message: impl Into<String>) -> Self {
         Self {
-            frames: vec!['\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}', '\u{2827}', '\u{2807}', '\u{280F}'],
+            frames: vec![
+                '\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}',
+                '\u{2827}', '\u{2807}', '\u{280F}',
+            ],
             current_frame: 0,
             message: message.into(),
             enabled: io::stdout().is_terminal(),

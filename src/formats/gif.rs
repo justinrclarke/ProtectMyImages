@@ -100,7 +100,10 @@ fn is_netscape_extension(data: &[u8], pos: usize) -> bool {
 pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
     // Validate minimum size.
     if data.len() < 13 {
-        return Err(Error::invalid_image(path, "File too small to be a valid GIF"));
+        return Err(Error::invalid_image(
+            path,
+            "File too small to be a valid GIF",
+        ));
     }
 
     // Validate header.
@@ -116,7 +119,10 @@ pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
 
     // Copy Logical Screen Descriptor (7 bytes).
     if pos + 7 > data.len() {
-        return Err(Error::invalid_image(path, "Truncated Logical Screen Descriptor"));
+        return Err(Error::invalid_image(
+            path,
+            "Truncated Logical Screen Descriptor",
+        ));
     }
     output.extend_from_slice(&data[pos..pos + 7]);
 
@@ -154,8 +160,9 @@ pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
                     extensions::COMMENT => {
                         // Skip comment extension.
                         pos += 2;
-                        pos = skip_sub_blocks(data, pos)
-                            .ok_or_else(|| Error::invalid_image(path, "Truncated comment extension"))?;
+                        pos = skip_sub_blocks(data, pos).ok_or_else(|| {
+                            Error::invalid_image(path, "Truncated comment extension")
+                        })?;
                     }
                     extensions::APPLICATION => {
                         // Check if it's NETSCAPE2.0 (animation).
@@ -163,23 +170,27 @@ pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
                             // Keep NETSCAPE extension for animations.
                             output.extend_from_slice(&data[pos..pos + 2]);
                             pos += 2;
-                            let (blocks, new_pos) = read_sub_blocks(data, pos)
-                                .ok_or_else(|| Error::invalid_image(path, "Truncated application extension"))?;
+                            let (blocks, new_pos) =
+                                read_sub_blocks(data, pos).ok_or_else(|| {
+                                    Error::invalid_image(path, "Truncated application extension")
+                                })?;
                             output.extend_from_slice(&blocks);
                             pos = new_pos;
                         } else {
                             // Skip other application extensions (XMP, etc.).
                             pos += 2;
-                            pos = skip_sub_blocks(data, pos)
-                                .ok_or_else(|| Error::invalid_image(path, "Truncated application extension"))?;
+                            pos = skip_sub_blocks(data, pos).ok_or_else(|| {
+                                Error::invalid_image(path, "Truncated application extension")
+                            })?;
                         }
                     }
                     extensions::GRAPHICS_CONTROL => {
                         // Keep graphics control extension.
                         output.extend_from_slice(&data[pos..pos + 2]);
                         pos += 2;
-                        let (blocks, new_pos) = read_sub_blocks(data, pos)
-                            .ok_or_else(|| Error::invalid_image(path, "Truncated graphics control extension"))?;
+                        let (blocks, new_pos) = read_sub_blocks(data, pos).ok_or_else(|| {
+                            Error::invalid_image(path, "Truncated graphics control extension")
+                        })?;
                         output.extend_from_slice(&blocks);
                         pos = new_pos;
                     }
@@ -187,16 +198,18 @@ pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
                         // Keep plain text extension.
                         output.extend_from_slice(&data[pos..pos + 2]);
                         pos += 2;
-                        let (blocks, new_pos) = read_sub_blocks(data, pos)
-                            .ok_or_else(|| Error::invalid_image(path, "Truncated plain text extension"))?;
+                        let (blocks, new_pos) = read_sub_blocks(data, pos).ok_or_else(|| {
+                            Error::invalid_image(path, "Truncated plain text extension")
+                        })?;
                         output.extend_from_slice(&blocks);
                         pos = new_pos;
                     }
                     _ => {
                         // Unknown extension - skip it.
                         pos += 2;
-                        pos = skip_sub_blocks(data, pos)
-                            .ok_or_else(|| Error::invalid_image(path, "Truncated unknown extension"))?;
+                        pos = skip_sub_blocks(data, pos).ok_or_else(|| {
+                            Error::invalid_image(path, "Truncated unknown extension")
+                        })?;
                     }
                 }
             }
@@ -264,25 +277,24 @@ pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
 pub fn create_minimal_gif() -> Vec<u8> {
     vec![
         // Header.
-        b'G', b'I', b'F', b'8', b'9', b'a',
-        // Logical Screen Descriptor.
+        b'G', b'I', b'F', b'8', b'9', b'a', // Logical Screen Descriptor.
         0x01, 0x00, // Width: 1.
         0x01, 0x00, // Height: 1.
-        0x00,       // Packed: no GCT.
-        0x00,       // Background color index.
-        0x00,       // Pixel aspect ratio.
+        0x00, // Packed: no GCT.
+        0x00, // Background color index.
+        0x00, // Pixel aspect ratio.
         // Image Descriptor.
-        0x2C,       // Image separator.
+        0x2C, // Image separator.
         0x00, 0x00, // Left.
         0x00, 0x00, // Top.
         0x01, 0x00, // Width: 1.
         0x01, 0x00, // Height: 1.
-        0x00,       // Packed: no LCT.
+        0x00, // Packed: no LCT.
         // Image Data.
-        0x02,       // LZW minimum code size.
-        0x02,       // Block size: 2.
+        0x02, // LZW minimum code size.
+        0x02, // Block size: 2.
         0x44, 0x01, // Compressed data.
-        0x00,       // Block terminator.
+        0x00, // Block terminator.
         // Trailer.
         0x3B,
     ]
@@ -293,19 +305,16 @@ pub fn create_minimal_gif() -> Vec<u8> {
 pub fn create_gif_with_comment() -> Vec<u8> {
     vec![
         // Header.
-        b'G', b'I', b'F', b'8', b'9', b'a',
-        // Logical Screen Descriptor.
+        b'G', b'I', b'F', b'8', b'9', b'a', // Logical Screen Descriptor.
         0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
         // Comment Extension (should be stripped).
         0x21, 0xFE, // Extension introducer + comment label.
-        0x0D,       // Block size: 13.
+        0x0D, // Block size: 13.
         b'T', b'e', b's', b't', b' ', b'c', b'o', b'm', b'm', b'e', b'n', b't', b'!',
-        0x00,       // Block terminator.
+        0x00, // Block terminator.
         // Image Descriptor.
-        0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
-        // Image Data.
-        0x02, 0x02, 0x44, 0x01, 0x00,
-        // Trailer.
+        0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, // Image Data.
+        0x02, 0x02, 0x44, 0x01, 0x00, // Trailer.
         0x3B,
     ]
 }
@@ -370,8 +379,7 @@ mod tests {
         assert!(is_netscape_extension(&data, 0));
 
         let not_netscape = [
-            0x0B,
-            b'X', b'M', b'P', b' ', b'D', b'a', b't', b'a', b'X', b'M', b'P',
+            0x0B, b'X', b'M', b'P', b' ', b'D', b'a', b't', b'a', b'X', b'M', b'P',
         ];
         assert!(!is_netscape_extension(&not_netscape, 0));
     }
@@ -380,8 +388,8 @@ mod tests {
     fn test_skip_sub_blocks() {
         let data = [
             0x03, b'a', b'b', b'c', // Block of 3 bytes.
-            0x02, b'd', b'e',       // Block of 2 bytes.
-            0x00,                   // Terminator.
+            0x02, b'd', b'e', // Block of 2 bytes.
+            0x00, // Terminator.
         ];
         let end = skip_sub_blocks(&data, 0).unwrap();
         assert_eq!(end, data.len());
@@ -389,10 +397,7 @@ mod tests {
 
     #[test]
     fn test_read_sub_blocks() {
-        let data = [
-            0x03, b'a', b'b', b'c',
-            0x00,
-        ];
+        let data = [0x03, b'a', b'b', b'c', 0x00];
         let (blocks, end) = read_sub_blocks(&data, 0).unwrap();
         assert_eq!(blocks, vec![0x03, b'a', b'b', b'c', 0x00]);
         assert_eq!(end, data.len());

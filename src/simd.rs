@@ -3,7 +3,12 @@
 //! Provides hardware-accelerated implementations using CPU intrinsics
 //! when available, with fallback to software implementations.
 
-/// CRC32 implementation with optional hardware acceleration.
+/// CRC32 implementation (software only).
+///
+/// Note: Hardware CRC32 instructions (SSE4.2, ARM CRC) compute CRC-32C
+/// (Castagnoli polynomial), not standard CRC-32 (ISO 3309 polynomial)
+/// used by PNG. Therefore we use the software implementation which
+/// correctly uses the standard polynomial 0xEDB88320.
 pub mod crc32 {
     /// CRC32 lookup table for software implementation.
     const CRC32_TABLE: [u32; 256] = generate_crc32_table();
@@ -29,46 +34,14 @@ pub mod crc32 {
         table
     }
 
-    /// Compute CRC32 using the best available method.
+    /// Compute CRC32 using the standard ISO 3309 polynomial.
     ///
-    /// This will use hardware acceleration on supported CPUs:
-    /// - x86_64: SSE4.2 CRC32 instructions
-    /// - aarch64: ARM CRC32 instructions
-    /// Falls back to an optimized software implementation on unsupported platforms.
+    /// This uses an optimized software implementation with a lookup table.
+    /// Hardware CRC32 instructions cannot be used because they implement
+    /// CRC-32C (Castagnoli) rather than standard CRC-32.
     #[inline]
     pub fn compute(data: &[u8]) -> u32 {
-        #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
-        {
-            return compute_hardware_x86(data);
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "crc"))]
-        {
-            return compute_hardware_arm(data);
-        }
-
-        #[cfg(not(any(
-            all(target_arch = "x86_64", target_feature = "sse4.2"),
-            all(target_arch = "aarch64", target_feature = "crc")
-        )))]
-        {
-            // Try runtime detection
-            #[cfg(target_arch = "x86_64")]
-            {
-                if is_x86_feature_detected!("sse4.2") {
-                    return unsafe { compute_sse42(data) };
-                }
-            }
-
-            #[cfg(target_arch = "aarch64")]
-            {
-                if std::arch::is_aarch64_feature_detected!("crc") {
-                    return unsafe { compute_arm_crc32(data) };
-                }
-            }
-
-            compute_software(data)
-        }
+        compute_software(data)
     }
 
     /// Software CRC32 implementation using lookup table.
@@ -96,93 +69,12 @@ pub mod crc32 {
         crc ^ 0xFFFFFFFF
     }
 
-    /// Hardware-accelerated CRC32 using SSE4.2 instructions.
-    #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "sse4.2")]
-    unsafe fn compute_sse42(data: &[u8]) -> u32 {
-        use std::arch::x86_64::_mm_crc32_u64;
-        use std::arch::x86_64::_mm_crc32_u8;
-
-        let mut crc: u64 = 0xFFFFFFFF;
-
-        // Process 8 bytes at a time using 64-bit CRC instruction
-        let chunks = data.chunks_exact(8);
-        let remainder = chunks.remainder();
-
-        for chunk in chunks {
-            let value = u64::from_le_bytes([
-                chunk[0], chunk[1], chunk[2], chunk[3],
-                chunk[4], chunk[5], chunk[6], chunk[7],
-            ]);
-            crc = _mm_crc32_u64(crc, value);
-        }
-
-        // Process remaining bytes
-        for &byte in remainder {
-            crc = _mm_crc32_u8(crc as u32, byte) as u64;
-        }
-
-        (crc as u32) ^ 0xFFFFFFFF
-    }
-
-    /// Hardware CRC32 with compile-time feature detection (x86_64).
-    #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
-    #[inline]
-    fn compute_hardware_x86(data: &[u8]) -> u32 {
-        unsafe { compute_sse42(data) }
-    }
-
-    /// Hardware-accelerated CRC32 using ARM CRC32 instructions.
-    #[cfg(target_arch = "aarch64")]
-    #[target_feature(enable = "crc")]
-    unsafe fn compute_arm_crc32(data: &[u8]) -> u32 {
-        use std::arch::aarch64::{__crc32b, __crc32d};
-
-        let mut crc: u32 = 0xFFFFFFFF;
-
-        // Process 8 bytes at a time using 64-bit CRC instruction
-        let chunks = data.chunks_exact(8);
-        let remainder = chunks.remainder();
-
-        for chunk in chunks {
-            let value = u64::from_le_bytes([
-                chunk[0], chunk[1], chunk[2], chunk[3],
-                chunk[4], chunk[5], chunk[6], chunk[7],
-            ]);
-            crc = __crc32d(crc, value);
-        }
-
-        // Process remaining bytes one at a time
-        for &byte in remainder {
-            crc = __crc32b(crc, byte);
-        }
-
-        crc ^ 0xFFFFFFFF
-    }
-
-    /// Hardware CRC32 with compile-time feature detection (aarch64).
-    #[cfg(all(target_arch = "aarch64", target_feature = "crc"))]
-    #[inline]
-    fn compute_hardware_arm(data: &[u8]) -> u32 {
-        unsafe { compute_arm_crc32(data) }
-    }
-
     /// Check if hardware CRC32 is available.
+    ///
+    /// Always returns false because hardware CRC32 instructions compute
+    /// CRC-32C, not standard CRC-32 needed for PNG.
     pub fn is_hardware_accelerated() -> bool {
-        #[cfg(target_arch = "x86_64")]
-        {
-            return is_x86_feature_detected!("sse4.2");
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            return std::arch::is_aarch64_feature_detected!("crc");
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            false
-        }
+        false
     }
 }
 
@@ -233,13 +125,10 @@ pub mod memops {
 
 /// Report on available hardware acceleration features.
 pub fn acceleration_report() -> String {
-    let mut features = Vec::new();
+    let mut features: Vec<&str> = Vec::new();
 
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("sse4.2") {
-            features.push("SSE4.2 (CRC32)");
-        }
         if is_x86_feature_detected!("avx2") {
             features.push("AVX2");
         }
@@ -251,9 +140,6 @@ pub fn acceleration_report() -> String {
     #[cfg(target_arch = "aarch64")]
     {
         features.push("ARM64 NEON");
-        if std::arch::is_aarch64_feature_detected!("crc") {
-            features.push("ARM CRC32");
-        }
     }
 
     if features.is_empty() {
@@ -342,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_is_hardware_accelerated() {
-        // Just check that it doesn't panic
-        let _ = crc32::is_hardware_accelerated();
+        // Hardware CRC32 is not used because it computes CRC-32C, not CRC-32
+        assert!(!crc32::is_hardware_accelerated());
     }
 }

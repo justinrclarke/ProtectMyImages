@@ -38,8 +38,8 @@ pub mod terminal;
 
 pub use cli::Config;
 pub use error::{Error, Result};
-pub use formats::{detect_format, strip_metadata, ImageFormat};
-pub use parallel::{available_parallelism, ThreadPool};
+pub use formats::{ImageFormat, detect_format, strip_metadata};
+pub use parallel::{ThreadPool, available_parallelism};
 pub use processor::Processor;
 pub use simd::acceleration_report;
-pub use terminal::{print_error, print_info, print_success, print_warning, ProcessingStats};
+pub use terminal::{ProcessingStats, print_error, print_info, print_success, print_warning};

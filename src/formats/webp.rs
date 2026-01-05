@@ -41,7 +41,7 @@ const METADATA_CHUNKS: &[&[u8; 4]] = &[
 
 /// Check if a chunk is a metadata chunk that should be stripped.
 fn is_metadata_chunk(fourcc: &[u8; 4]) -> bool {
-    METADATA_CHUNKS.iter().any(|&m| m == fourcc)
+    METADATA_CHUNKS.contains(&fourcc)
 }
 
 /// A WebP chunk.
@@ -53,6 +53,7 @@ struct Chunk<'a> {
 
 impl<'a> Chunk<'a> {
     /// Get the padded size (chunks are padded to even length).
+    #[allow(dead_code)]
     fn padded_size(&self) -> usize {
         (self.data.len() + 1) & !1
     }
@@ -86,7 +87,8 @@ fn parse_chunks<'a>(data: &'a [u8], path: &Path) -> Result<Vec<Chunk<'a>>> {
         if pos + 4 > data.len() {
             return Err(Error::invalid_image(path, "Truncated chunk size"));
         }
-        let size = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let size =
+            u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         // Read data.
@@ -127,7 +129,10 @@ fn update_vp8x_flags(vp8x_data: &[u8]) -> Vec<u8> {
 pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
     // Validate minimum size.
     if data.len() < 12 {
-        return Err(Error::invalid_image(path, "File too small to be a valid WebP"));
+        return Err(Error::invalid_image(
+            path,
+            "File too small to be a valid WebP",
+        ));
     }
 
     // Validate RIFF header.
@@ -144,9 +149,9 @@ pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
     let chunks = parse_chunks(data, path)?;
 
     // Validate we have at least one image chunk.
-    let has_image = chunks.iter().any(|c| {
-        &c.fourcc == b"VP8 " || &c.fourcc == b"VP8L"
-    });
+    let has_image = chunks
+        .iter()
+        .any(|c| &c.fourcc == b"VP8 " || &c.fourcc == b"VP8L");
 
     if !has_image && !chunks.iter().any(|c| &c.fourcc == b"VP8X") {
         return Err(Error::invalid_image(path, "Missing image data chunk"));
@@ -192,16 +197,11 @@ pub fn create_minimal_webp() -> Vec<u8> {
     // This creates a minimal 1x1 lossy WebP.
     vec![
         // RIFF header.
-        b'R', b'I', b'F', b'F',
-        0x1A, 0x00, 0x00, 0x00, // File size: 26 bytes.
-        b'W', b'E', b'B', b'P',
-        // VP8 chunk.
-        b'V', b'P', b'8', b' ',
-        0x0E, 0x00, 0x00, 0x00, // Chunk size: 14 bytes.
+        b'R', b'I', b'F', b'F', 0x1A, 0x00, 0x00, 0x00, // File size: 26 bytes.
+        b'W', b'E', b'B', b'P', // VP8 chunk.
+        b'V', b'P', b'8', b' ', 0x0E, 0x00, 0x00, 0x00, // Chunk size: 14 bytes.
         // Minimal VP8 bitstream (1x1 pixel).
-        0x30, 0x01, 0x00, 0x9D, 0x01, 0x2A,
-        0x01, 0x00, 0x01, 0x00, 0x00, 0x34,
-        0x25, 0x9F,
+        0x30, 0x01, 0x00, 0x9D, 0x01, 0x2A, 0x01, 0x00, 0x01, 0x00, 0x00, 0x34, 0x25, 0x9F,
     ]
 }
 
@@ -226,9 +226,7 @@ pub fn create_webp_with_exif() -> Vec<u8> {
     // VP8 chunk.
     data.extend_from_slice(b"VP8 ");
     let vp8_data = [
-        0x30, 0x01, 0x00, 0x9D, 0x01, 0x2A,
-        0x01, 0x00, 0x01, 0x00, 0x00, 0x34,
-        0x25, 0x9F,
+        0x30, 0x01, 0x00, 0x9D, 0x01, 0x2A, 0x01, 0x00, 0x01, 0x00, 0x00, 0x34, 0x25, 0x9F,
     ];
     data.extend_from_slice(&(vp8_data.len() as u32).to_le_bytes());
     data.extend_from_slice(&vp8_data);

@@ -35,7 +35,7 @@ use std::path::Path;
 
 /// Byte order markers.
 const LITTLE_ENDIAN: [u8; 2] = [0x49, 0x49]; // "II"
-const BIG_ENDIAN: [u8; 2] = [0x4D, 0x4D];    // "MM"
+const BIG_ENDIAN: [u8; 2] = [0x4D, 0x4D]; // "MM"
 
 /// Byte order for reading multi-byte values.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,6 +75,7 @@ impl ByteOrder {
 }
 
 /// TIFF tag IDs.
+#[allow(dead_code)]
 mod tags {
     // Essential image tags to keep.
     pub const IMAGE_WIDTH: u16 = 256;
@@ -140,10 +141,10 @@ fn is_metadata_tag(tag: u16) -> bool {
 /// TIFF field type sizes.
 fn type_size(field_type: u16) -> usize {
     match field_type {
-        1 | 2 | 6 | 7 => 1,        // BYTE, ASCII, SBYTE, UNDEFINED
-        3 | 8 => 2,                 // SHORT, SSHORT
-        4 | 9 | 11 => 4,           // LONG, SLONG, FLOAT
-        5 | 10 | 12 => 8,          // RATIONAL, SRATIONAL, DOUBLE
+        1 | 2 | 6 | 7 => 1, // BYTE, ASCII, SBYTE, UNDEFINED
+        3 | 8 => 2,         // SHORT, SSHORT
+        4 | 9 | 11 => 4,    // LONG, SLONG, FLOAT
+        5 | 10 | 12 => 8,   // RATIONAL, SRATIONAL, DOUBLE
         _ => 1,
     }
 }
@@ -213,7 +214,10 @@ fn parse_ifd(
 pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
     // Validate minimum size.
     if data.len() < 8 {
-        return Err(Error::invalid_image(path, "File too small to be a valid TIFF"));
+        return Err(Error::invalid_image(
+            path,
+            "File too small to be a valid TIFF",
+        ));
     }
 
     // Determine byte order.
@@ -295,9 +299,9 @@ pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
             // Track strip/tile offsets and byte counts for later copying.
             if entry.tag == tags::STRIP_OFFSETS || entry.tag == tags::TILE_OFFSETS {
                 let offsets = read_offset_values(data, entry, byte_order);
-                let byte_counts_entry = entries.iter().find(|e| {
-                    e.tag == tags::STRIP_BYTE_COUNTS || e.tag == tags::TILE_BYTE_COUNTS
-                });
+                let byte_counts_entry = entries
+                    .iter()
+                    .find(|e| e.tag == tags::STRIP_BYTE_COUNTS || e.tag == tags::TILE_BYTE_COUNTS);
 
                 if let Some(bc_entry) = byte_counts_entry {
                     let counts = read_offset_values(data, bc_entry, byte_order);
@@ -560,9 +564,7 @@ mod tests {
         let result = strip(&data, &test_path()).unwrap();
 
         // Should start with byte order marker.
-        assert!(
-            result.starts_with(&LITTLE_ENDIAN) || result.starts_with(&BIG_ENDIAN)
-        );
+        assert!(result.starts_with(&LITTLE_ENDIAN) || result.starts_with(&BIG_ENDIAN));
     }
 
     #[test]
@@ -606,11 +608,11 @@ mod tests {
 
     #[test]
     fn test_type_size() {
-        assert_eq!(type_size(1), 1);  // BYTE
-        assert_eq!(type_size(2), 1);  // ASCII
-        assert_eq!(type_size(3), 2);  // SHORT
-        assert_eq!(type_size(4), 4);  // LONG
-        assert_eq!(type_size(5), 8);  // RATIONAL
+        assert_eq!(type_size(1), 1); // BYTE
+        assert_eq!(type_size(2), 1); // ASCII
+        assert_eq!(type_size(3), 2); // SHORT
+        assert_eq!(type_size(4), 4); // LONG
+        assert_eq!(type_size(5), 8); // RATIONAL
         assert_eq!(type_size(12), 8); // DOUBLE
     }
 }

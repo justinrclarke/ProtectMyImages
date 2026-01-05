@@ -16,36 +16,22 @@ pub enum Error {
         path: Option<PathBuf>,
     },
     /// Invalid or corrupted image file.
-    InvalidImage {
-        path: PathBuf,
-        reason: String,
-    },
+    InvalidImage { path: PathBuf, reason: String },
     /// Unsupported image format.
     UnsupportedFormat {
         path: PathBuf,
         detected: Option<String>,
     },
     /// CLI argument parsing error.
-    InvalidArgument {
-        argument: String,
-        reason: String,
-    },
+    InvalidArgument { argument: String, reason: String },
     /// Missing required argument.
-    MissingArgument {
-        argument: String,
-    },
+    MissingArgument { argument: String },
     /// File not found.
-    NotFound {
-        path: PathBuf,
-    },
+    NotFound { path: PathBuf },
     /// Permission denied.
-    PermissionDenied {
-        path: PathBuf,
-    },
+    PermissionDenied { path: PathBuf },
     /// Output file already exists and --force not specified.
-    OutputExists {
-        path: PathBuf,
-    },
+    OutputExists { path: PathBuf },
 }
 
 impl fmt::Display for Error {
@@ -63,12 +49,7 @@ impl fmt::Display for Error {
             }
             Error::UnsupportedFormat { path, detected } => {
                 if let Some(fmt) = detected {
-                    write!(
-                        f,
-                        "Unsupported format '{}' for '{}'",
-                        fmt,
-                        path.display()
-                    )
+                    write!(f, "Unsupported format '{}' for '{}'", fmt, path.display())
                 } else {
                     write!(f, "Unknown or unsupported format for '{}'", path.display())
                 }

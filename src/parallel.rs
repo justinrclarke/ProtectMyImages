@@ -82,15 +82,17 @@ struct Worker {
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Self {
-        let thread = thread::spawn(move || loop {
-            let job = {
-                let lock = receiver.lock().expect("Worker mutex poisoned");
-                lock.recv()
-            };
+        let thread = thread::spawn(move || {
+            loop {
+                let job = {
+                    let lock = receiver.lock().expect("Worker mutex poisoned");
+                    lock.recv()
+                };
 
-            match job {
-                Ok(job) => job(),
-                Err(_) => break, // Channel closed, exit the loop.
+                match job {
+                    Ok(job) => job(),
+                    Err(_) => break, // Channel closed, exit the loop.
+                }
             }
         });
 
@@ -162,12 +164,8 @@ where
 ///
 /// This is useful when you want to process results as they complete
 /// rather than waiting for all results.
-pub fn parallel_for_each<T, F, C>(
-    items: Vec<T>,
-    process: F,
-    mut callback: C,
-    num_threads: usize,
-) where
+pub fn parallel_for_each<T, F, C>(items: Vec<T>, process: F, mut callback: C, num_threads: usize)
+where
     T: Send + 'static,
     F: Fn(T) + Send + Sync + 'static,
     C: FnMut(),

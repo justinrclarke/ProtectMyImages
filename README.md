@@ -19,7 +19,7 @@ PMI removes all this metadata while preserving your image quality.
 - **Multiple formats** - JPEG, PNG, GIF, WebP, TIFF
 - **Batch processing** - Process entire directories
 - **Parallel processing** - Multi-threaded execution for faster batch operations
-- **Hardware acceleration** - SIMD-accelerated CRC32 (SSE4.2 on x86_64)
+- **Optimized** - Lookup table CRC32 and auto-vectorized memory operations
 - **Safe by default** - Creates new files (original untouched)
 - **In-place mode** - Optionally overwrite originals
 - **Dry-run mode** - Preview changes without modifying files
@@ -240,13 +240,11 @@ Filters IFD (Image File Directory) entries, removing metadata tags while preserv
 PMI automatically uses all available CPU cores for batch processing. Files are processed in parallel using a thread pool, with results collected and displayed in order. Use `-j N` to limit the number of threads.
 
 ### Hardware Acceleration
-PMI uses SIMD instructions when available for improved performance:
+PMI leverages compiler auto-vectorization for improved performance on modern CPUs:
 
 | Architecture | Feature | Usage |
 |-------------|---------|-------|
-| x86_64 | SSE4.2 | Hardware CRC32 for PNG chunk validation |
 | x86_64 | AVX2/AVX-512 | Auto-vectorized memory operations |
-| ARM64 | CRC32 | Hardware CRC32 for PNG chunk validation |
 | ARM64 | NEON | Auto-vectorized memory operations |
 
 Use `-v` (verbose) mode to see which hardware acceleration features are available on your system.

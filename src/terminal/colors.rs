@@ -178,7 +178,7 @@ impl fmt::Display for Styled {
             codes.push(color.fg_code());
         }
 
-        write!(f, "{}{}{}{}", ESC, codes.join(";"), "m", self.content)?;
+        write!(f, "{}{}m{}", ESC, codes.join(";"), self.content)?;
         write!(f, "{}", RESET)
     }
 }
@@ -198,22 +198,30 @@ impl Symbols {
 
     /// Success symbol (green checkmark).
     pub fn success(&self) -> Styled {
-        Styled::with_color_support("\u{2713}", self.enabled).green().bold()
+        Styled::with_color_support("\u{2713}", self.enabled)
+            .green()
+            .bold()
     }
 
     /// Error symbol (red X).
     pub fn error(&self) -> Styled {
-        Styled::with_color_support("\u{2717}", self.enabled).red().bold()
+        Styled::with_color_support("\u{2717}", self.enabled)
+            .red()
+            .bold()
     }
 
     /// Warning symbol (yellow warning sign).
     pub fn warning(&self) -> Styled {
-        Styled::with_color_support("\u{26A0}", self.enabled).yellow().bold()
+        Styled::with_color_support("\u{26A0}", self.enabled)
+            .yellow()
+            .bold()
     }
 
     /// Info symbol (blue info).
     pub fn info(&self) -> Styled {
-        Styled::with_color_support("\u{2139}", self.enabled).blue().bold()
+        Styled::with_color_support("\u{2139}", self.enabled)
+            .blue()
+            .bold()
     }
 
     /// Arrow symbol for progress.

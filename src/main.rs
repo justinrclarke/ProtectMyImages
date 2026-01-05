@@ -2,7 +2,7 @@
 //!
 //! A CLI tool that strips metadata from images to protect user privacy.
 
-use pmi::cli::{help_message, version_message, Config};
+use pmi::cli::{Config, help_message, version_message};
 use pmi::processor::Processor;
 use pmi::terminal::{print_error, print_summary};
 use std::env;

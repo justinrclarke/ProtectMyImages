@@ -4,7 +4,7 @@ pub mod colors;
 pub mod progress;
 
 pub use colors::{
-    format_size, print_error, print_info, print_success, print_warning,
-    stderr_supports_color, stdout_supports_color, Color, Style, Styled, Symbols,
+    Color, Style, Styled, Symbols, format_size, print_error, print_info, print_success,
+    print_warning, stderr_supports_color, stdout_supports_color,
 };
-pub use progress::{print_summary, ProcessingStats, ProgressBar, ProgressConfig, Spinner};
+pub use progress::{ProcessingStats, ProgressBar, ProgressConfig, Spinner, print_summary};

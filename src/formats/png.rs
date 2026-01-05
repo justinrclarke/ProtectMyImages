@@ -38,7 +38,7 @@ const METADATA_CHUNKS: &[&[u8; 4]] = &[
 
 /// Check if a chunk type is a metadata chunk that should be stripped.
 fn is_metadata_chunk(chunk_type: &[u8; 4]) -> bool {
-    METADATA_CHUNKS.iter().any(|&m| m == chunk_type)
+    METADATA_CHUNKS.contains(&chunk_type)
 }
 
 /// Calculate CRC32 for PNG chunk validation/creation.
@@ -86,7 +86,8 @@ fn parse_chunks<'a>(data: &'a [u8], path: &Path) -> Result<Vec<Chunk<'a>>> {
         if pos + 4 > data.len() {
             return Err(Error::invalid_image(path, "Truncated chunk length"));
         }
-        let length = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let length =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         // Read chunk type.
@@ -127,7 +128,10 @@ fn parse_chunks<'a>(data: &'a [u8], path: &Path) -> Result<Vec<Chunk<'a>>> {
 pub fn strip(data: &[u8], path: &Path) -> Result<Vec<u8>> {
     // Validate signature.
     if data.len() < PNG_SIGNATURE.len() {
-        return Err(Error::invalid_image(path, "File too small to be a valid PNG"));
+        return Err(Error::invalid_image(
+            path,
+            "File too small to be a valid PNG",
+        ));
     }
 
     if !data.starts_with(&PNG_SIGNATURE) {
@@ -176,11 +180,11 @@ pub fn create_minimal_png() -> Vec<u8> {
     let ihdr_data = [
         0x00, 0x00, 0x00, 0x01, // Width: 1
         0x00, 0x00, 0x00, 0x01, // Height: 1
-        0x08,                   // Bit depth: 8
-        0x00,                   // Color type: grayscale
-        0x00,                   // Compression: deflate
-        0x00,                   // Filter: adaptive
-        0x00,                   // Interlace: none
+        0x08, // Bit depth: 8
+        0x00, // Color type: grayscale
+        0x00, // Compression: deflate
+        0x00, // Filter: adaptive
+        0x00, // Interlace: none
     ];
     let ihdr = Chunk {
         chunk_type: *b"IHDR",
@@ -221,9 +225,7 @@ pub fn create_png_with_metadata() -> Vec<u8> {
 
     // IHDR chunk.
     let ihdr_data = [
-        0x00, 0x00, 0x00, 0x01,
-        0x00, 0x00, 0x00, 0x01,
-        0x08, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x00, 0x00, 0x00, 0x00,
     ];
     let ihdr = Chunk {
         chunk_type: *b"IHDR",
@@ -242,11 +244,11 @@ pub fn create_png_with_metadata() -> Vec<u8> {
     // tIME chunk (should be stripped).
     let time_data = [
         0x07, 0xE8, // Year: 2024
-        0x06,       // Month: June
-        0x15,       // Day: 21
-        0x0C,       // Hour: 12
-        0x00,       // Minute: 0
-        0x00,       // Second: 0
+        0x06, // Month: June
+        0x15, // Day: 21
+        0x0C, // Hour: 12
+        0x00, // Minute: 0
+        0x00, // Second: 0
     ];
     let time = Chunk {
         chunk_type: *b"tIME",

@@ -12,7 +12,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const NAME: &str = "pmi";
 
 /// CLI configuration parsed from command-line arguments.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Config {
     /// Input paths (files or directories).
     pub paths: Vec<PathBuf>,
@@ -38,24 +38,6 @@ pub struct Config {
     pub jobs: Option<usize>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            paths: Vec::new(),
-            output_dir: None,
-            recursive: false,
-            force: false,
-            in_place: false,
-            verbose: false,
-            quiet: false,
-            dry_run: false,
-            help: false,
-            version: false,
-            jobs: None,
-        }
-    }
-}
-
 impl Config {
     /// Parse configuration from command-line arguments.
     pub fn parse<I, S>(args: I) -> Result<Self>
@@ -72,10 +54,8 @@ impl Config {
         while let Some(arg) = args.next() {
             let arg = arg.as_ref();
 
-            if arg.starts_with("--") {
+            if let Some(opt) = arg.strip_prefix("--") {
                 // Long option.
-                let opt = &arg[2..];
-
                 if opt.contains('=') {
                     // --option=value format.
                     let (key, value) = opt.split_once('=').unwrap();
@@ -84,9 +64,9 @@ impl Config {
                     // --option or --option value format.
                     config.handle_long_option(opt, &mut args)?;
                 }
-            } else if arg.starts_with('-') && arg.len() > 1 {
+            } else if let Some(short_opts) = arg.strip_prefix('-').filter(|s| !s.is_empty()) {
                 // Short option(s).
-                let chars: Vec<char> = arg[1..].chars().collect();
+                let chars: Vec<char> = short_opts.chars().collect();
 
                 for (i, c) in chars.iter().enumerate() {
                     let is_last = i == chars.len() - 1;
@@ -116,7 +96,11 @@ impl Config {
         Ok(config)
     }
 
-    fn handle_long_option<I, S>(&mut self, opt: &str, args: &mut std::iter::Peekable<I>) -> Result<()>
+    fn handle_long_option<I, S>(
+        &mut self,
+        opt: &str,
+        args: &mut std::iter::Peekable<I>,
+    ) -> Result<()>
     where
         I: Iterator<Item = S>,
         S: AsRef<str>,
@@ -226,19 +210,22 @@ impl Config {
 
 /// Parse a jobs value (positive integer).
 fn parse_jobs(value: &str) -> Result<usize> {
-    value.parse::<usize>().map_err(|_| Error::InvalidArgument {
-        argument: String::from("--jobs"),
-        reason: format!("'{}' is not a valid number", value),
-    }).and_then(|n| {
-        if n == 0 {
-            Err(Error::InvalidArgument {
-                argument: String::from("--jobs"),
-                reason: String::from("Number of jobs must be at least 1"),
-            })
-        } else {
-            Ok(n)
-        }
-    })
+    value
+        .parse::<usize>()
+        .map_err(|_| Error::InvalidArgument {
+            argument: String::from("--jobs"),
+            reason: format!("'{}' is not a valid number", value),
+        })
+        .and_then(|n| {
+            if n == 0 {
+                Err(Error::InvalidArgument {
+                    argument: String::from("--jobs"),
+                    reason: String::from("Number of jobs must be at least 1"),
+                })
+            } else {
+                Ok(n)
+            }
+        })
 }
 
 /// Generate the help message.

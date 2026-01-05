@@ -8,14 +8,14 @@ use crate::error::{Error, Result};
 use crate::formats::{detect_format_from_extension, strip_metadata};
 use crate::parallel::{self, ThreadPool};
 use crate::terminal::{
-    format_size, print_error, print_info, print_success, print_warning,
-    ProcessingStats, ProgressBar, Styled, stdout_supports_color,
+    ProcessingStats, ProgressBar, Styled, format_size, print_error, print_info, print_success,
+    print_warning, stdout_supports_color,
 };
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::Instant;
 
 /// Result of processing a single file.
@@ -28,15 +28,9 @@ pub enum ProcessResult {
         bytes_removed: u64,
     },
     /// File was skipped (unsupported format, etc.).
-    Skipped {
-        path: PathBuf,
-        reason: String,
-    },
+    Skipped { path: PathBuf, reason: String },
     /// Processing failed.
-    Failed {
-        path: PathBuf,
-        error: String,
-    },
+    Failed { path: PathBuf, error: String },
 }
 
 // Make ProcessResult Send + Sync for parallel processing
@@ -72,7 +66,10 @@ impl Processor {
         }
 
         let file_count = files.len();
-        let num_jobs = self.config.jobs.unwrap_or_else(parallel::available_parallelism);
+        let num_jobs = self
+            .config
+            .jobs
+            .unwrap_or_else(parallel::available_parallelism);
 
         if !self.config.quiet {
             let parallel_info = if num_jobs > 1 {
@@ -385,7 +382,11 @@ fn process_file_standalone(path: &Path, config: &Config) -> ProcessResult {
 }
 
 /// Write output to a file atomically (standalone function for parallel execution).
-fn write_output_standalone(path: &Path, data: &[u8], in_place: bool) -> std::result::Result<(), String> {
+fn write_output_standalone(
+    path: &Path,
+    data: &[u8],
+    in_place: bool,
+) -> std::result::Result<(), String> {
     if in_place {
         let temp_path = path.with_extension("pmi_tmp");
 
@@ -396,11 +397,10 @@ fn write_output_standalone(path: &Path, data: &[u8], in_place: bool) -> std::res
         file.flush()
             .map_err(|e| format!("Failed to flush temp file: {}", e))?;
 
-        fs::rename(&temp_path, path)
-            .map_err(|e| format!("Failed to rename temp file: {}", e))?;
+        fs::rename(&temp_path, path).map_err(|e| format!("Failed to rename temp file: {}", e))?;
     } else {
-        let mut file = fs::File::create(path)
-            .map_err(|e| format!("Failed to create output file: {}", e))?;
+        let mut file =
+            fs::File::create(path).map_err(|e| format!("Failed to create output file: {}", e))?;
         file.write_all(data)
             .map_err(|e| format!("Failed to write output file: {}", e))?;
     }
